@@ -222,6 +222,15 @@ verbose("crop to fit = $cropToFit");
 
 
 /**
+ * fill-to-fit, ff - affecting the resulting image width, height and resize options
+ */
+$fillToFit = preg_replace('/[^0-9A-Fa-f]+/', '', get(array('fill-to-fit', 'ff')));
+
+verbose("fill to fit = $fillToFit");
+
+
+
+/**
  * no-ratio, nr, stretch - affecting the resulting image width, height and resize options
  */
 $keepRatio = getDefined(array('no-ratio', 'nr', 'stretch'), false, true);

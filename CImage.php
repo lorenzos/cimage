@@ -181,6 +181,7 @@ class CImage
 
     public $keepRatio;
     public $cropToFit;
+    public $fillToFit;
 
     private $cropWidth;
     private $cropHeight;
@@ -319,6 +320,7 @@ class CImage
             'aspectRatio' => null,
             'keepRatio'   => true,
             'cropToFit'   => false,
+            'fillToFit'   => null,
             'crop'        => null, //array('width'=>null, 'height'=>null, 'start_x'=>0, 'start_y'=>0),
             'area'        => null, //'0,0,0,0',
 
@@ -579,7 +581,7 @@ class CImage
             $this->log("Keep aspect ratio.");
 
             // Crop-to-fit and both new width and height are set.
-            if ($this->cropToFit && isset($this->newWidth) && isset($this->newHeight)) {
+            if (($this->cropToFit || $this->fillToFit) && isset($this->newWidth) && isset($this->newHeight)) {
                 
                 // Use newWidth and newHeigh as width/height, image should fit in box.
                 $this->log("Use newWidth and newHeigh as width/height, image should fit in box.");
@@ -612,14 +614,19 @@ class CImage
             }
       
             // Use newWidth and newHeigh as defined width/height, image should fit the area.
-            if ($this->cropToFit) {
-                $this->log("Crop to fit.");
+            if ($this->cropToFit || $this->fillToFit) {
+                $this->log($this->cropToFit ? "Crop to fit." : "Fill to fit");
                 $ratioWidth  = $width  / $this->newWidth;
                 $ratioHeight = $height / $this->newHeight;
-                $ratio = ($ratioWidth < $ratioHeight) ? $ratioWidth : $ratioHeight;
+                if ($this->cropToFit) { // If crop, use the smallest ratio
+                	$ratio = ($ratioWidth < $ratioHeight) ? $ratioWidth : $ratioHeight;
+                } else { // If fill, use the bigger ratio
+                	$ratio = ($ratioWidth > $ratioHeight) ? $ratioWidth : $ratioHeight;
+                }
                 $this->cropWidth  = round($width  / $ratio);
                 $this->cropHeight = round($height / $ratio);
             }
+      		
         }
 
         // Crop, ensure to set new width and height
@@ -774,6 +781,7 @@ class CImage
     {
         $parts        = pathinfo($this->pathToImage);
         $cropToFit    = $this->cropToFit    ? '_cf'                      : null;
+        $fillToFit    = $this->fillToFit    ? "_ff{$this->fillToFit}"    : null;
         $crop_x       = $this->crop_x       ? "_x{$this->crop_x}"        : null;
         $crop_y       = $this->crop_y       ? "_y{$this->crop_y}"        : null;
         $scale        = $this->scale        ? "_s{$this->scale}"         : null;
@@ -826,7 +834,7 @@ class CImage
         $subdir = str_replace('/', '-', dirname($this->imageSrc));
         $subdir = ($subdir == '.') ? '_.' : $subdir;
         $file = $subdir . '_' . $parts['filename'] . '_' . round($this->newWidth) . '_'
-            . round($this->newHeight) . $offset . $crop . $cropToFit . $crop_x . $crop_y
+            . round($this->newHeight) . $offset . $crop . $cropToFit . $fillToFit . $crop_x . $crop_y
             . $quality . $filters . $sharpen . $emboss . $blur . $palette . $optimize
             . $scale . $rotateBefore . $rotateAfter . $autoRotate . $bgColor . '.' . $this->extension;
 
@@ -1112,15 +1120,22 @@ class CImage
         }
     
         // Resize by crop to fit
-        if ($this->cropToFit) {
+        if ($this->cropToFit || $this->fillToFit) {
             
-            $this->log("Crop to fit");
+            $this->log($this->cropToFit ? "Crop to fit" : "Fill to fit");
             $cropX = round(($this->cropWidth/2) - ($this->newWidth/2));
             $cropY = round(($this->cropHeight/2) - ($this->newHeight/2));
             $imgPreCrop   = $this->CreateImageKeepTransparency($this->cropWidth, $this->cropHeight);
             $imageResized = $this->CreateImageKeepTransparency($this->newWidth, $this->newHeight);
             imagecopyresampled($imgPreCrop, $this->image, 0, 0, 0, 0, $this->cropWidth, $this->cropHeight, $this->width, $this->height);
-            imagecopyresampled($imageResized, $imgPreCrop, 0, 0, $cropX, $cropY, $this->newWidth, $this->newHeight, $this->newWidth, $this->newHeight);
+            if ($this->fillToFit) {
+            	list($r, $g, $b) = sscanf($this->fillToFit, "%02x%02x%02x");
+            	$this->log("Filling with color #{$this->fillToFit} -> RGB($r,$g,$b)");
+            	imagefilledrectangle($imageResized, 0, 0, $this->newWidth - 1, $this->newHeight - 1, imagecolorallocate($imageResized, $r, $g, $b));
+	            imagecopyresampled($imageResized, $imgPreCrop, -$cropX, -$cropY, 0, 0, $this->cropWidth, $this->cropHeight, $this->cropWidth, $this->cropHeight);
+            } else {
+	            imagecopyresampled($imageResized, $imgPreCrop, 0, 0, $cropX, $cropY, $this->newWidth, $this->newHeight, $this->newWidth, $this->newHeight);
+            }
             $this->image = $imageResized;
             $this->width = $this->newWidth;
             $this->height = $this->newHeight;
@@ -1161,7 +1176,7 @@ class CImage
         if (isset($this->filters) && is_array($this->filters)) {
             
             foreach ($this->filters as $filter) {
-                $this->log("Applying filter $filter.");
+                $this->log("Applying filter " . implode($filter, ','));
             
                 switch ($filter['argc']) {
             
